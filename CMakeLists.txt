@@ -14,6 +14,8 @@ find_package(catkin REQUIRED COMPONENTS
   pcl_ros
 )
 
+find_package( OpenCV REQUIRED )
+
 ###################################
 ## catkin specific configuration ##
 ###################################
@@ -39,6 +41,7 @@ catkin_package(
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
+  ${OpenCV_INCLUDE_DIRS}
 )
 
 ## Declare a C++ executable
@@ -52,6 +55,7 @@ add_executable(${PROJECT_NAME}_node
 ## Specify libraries to link a library or executable target against
 target_link_libraries(${PROJECT_NAME}_node
   ${catkin_LIBRARIES}
+  ${OpenCV_LIBRARIES}
 )
 
 
