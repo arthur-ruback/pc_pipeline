@@ -30,17 +30,87 @@ myPipeline::myPipeline(ros::NodeHandle &nodeHandle) : m_nodeHandle(&nodeHandle)
     }
     m_PCMPublisher = m_nodeHandle->advertise<sensor_msgs::PointCloud2>(scanModifiedTopicName, scanModifiedTopicQueueSize);
 
-    // get pipeline mode
+    // get pipeline mode param
     if (!m_nodeHandle->getParam("pipeline_mode", pipelineMode))
     {
         ROS_ERROR("Error getting paramenter pipeline_mode\n");
         return;
     }
 
-    // get segmentation
+    // get segmentation param
     if (!m_nodeHandle->getParam("segmentation", segmentation))
     {
         ROS_ERROR("Error getting paramenter segmentation\n");
+        return;
+    }
+
+    // get voxelGridSize param
+    if (!m_nodeHandle->getParam("voxel_grid_size", voxelGridSize))
+    {
+        ROS_ERROR("Error getting paramenter voxel_grid_size\n");
+        return;
+    }
+
+    // get passThroughMin param
+    if (!m_nodeHandle->getParam("pass_through_min", passThroughMin))
+    {
+        ROS_ERROR("Error getting paramenter pass_through_min\n");
+        return;
+    }
+
+    // get passThroughMax param
+    if (!m_nodeHandle->getParam("pass_through_max", passThroughMax))
+    {
+        ROS_ERROR("Error getting paramenter pass_through_max\n");
+        return;
+    }
+
+    // get statisticalMean param
+    if (!m_nodeHandle->getParam("statistical_mean", statisticalMean))
+    {
+        ROS_ERROR("Error getting paramenter statistical_mean\n");
+        return;
+    }
+
+    // get statisticalStdDev param
+    if (!m_nodeHandle->getParam("statistical_std_dev", statisticalStdDev))
+    {
+        ROS_ERROR("Error getting paramenter statistical_std_dev\n");
+        return;
+    }
+
+    // get clusterTolerance param
+    if (!m_nodeHandle->getParam("cluster_tolerance", clusterTolerance))
+    {
+        ROS_ERROR("Error getting paramenter cluster_tolerance\n");
+        return;
+    }
+
+    // get minClusterSize param
+    if (!m_nodeHandle->getParam("min_cluster_size", minClusterSize))
+    {
+        ROS_ERROR("Error getting paramenter min_cluster_size\n");
+        return;
+    }
+
+    // get maxClusterSize param
+    if (!m_nodeHandle->getParam("max_cluster_size", maxClusterSize))
+    {
+        ROS_ERROR("Error getting paramenter max_cluster_size\n");
+        return;
+    }
+
+    // get kfProcessNoise param
+    if (!m_nodeHandle->getParam("kf_process_noise", kfProcessNoise))
+    {
+        ROS_ERROR("Error getting paramenter kf_process_noise\n");
+        return;
+    }
+
+    // get kfMeasurementNoise param
+    if (!m_nodeHandle->getParam("kf_measure_noise", kfMeasurementNoise))
+    {
+        ROS_ERROR("Error getting paramenter kf_measurement_noise\n");
         return;
     }
 
@@ -63,24 +133,9 @@ myPipeline::myPipeline(ros::NodeHandle &nodeHandle) : m_nodeHandle(&nodeHandle)
     ROS_INFO("Successfully launched node.");
 }
 
-// callback function that copies the input point cloud and publishes it
+// main pipeline callback function
 void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {
-    // sensor_msgs::PointCloud2 msgCopy;
-    // msgCopy.header = msg->header;
-    // msgCopy.height = msg->height;
-    // msgCopy.width = msg->width;
-    // msgCopy.fields = msg->fields;
-    // msgCopy.is_bigendian = msg->is_bigendian;
-    // msgCopy.point_step = msg->point_step;
-    // msgCopy.row_step = msg->row_step;
-    // msgCopy.is_dense = msg->is_dense;
-    // msgCopy.data = msg->data;
-
-    // m_PCMPublisher.publish(msgCopy);
-
-    // Container for original & filtered data
-
     // Convert to PCL data type
     pcl_conversions::toPCL(*msg, *cloud);
 
@@ -90,6 +145,7 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
     pcl::PointCloud<pcl::PointXYZ>::Ptr in_cloud(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::fromPCLPointCloud2(pcl_pc2, *in_cloud);
     pcl::PointCloud<pcl::PointXYZ>::Ptr out_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filteredXYZ(new pcl::PointCloud<pcl::PointXYZ>);
 
     // Perform the actual filtering based on pipeline mode
     switch (pipelineMode)
@@ -99,8 +155,10 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
         // Voxel Grid filter
         pcl::VoxelGrid<pcl::PCLPointCloud2> sor;
         sor.setInputCloud(cloud);
-        sor.setLeafSize(0.1, 0.1, 0.1);
+        sor.setLeafSize(voxelGridSize, voxelGridSize, voxelGridSize);
         sor.filter(*cloud_filtered);
+        // Convert to XYZ cloud
+        pcl::fromPCLPointCloud2(*cloud_filtered, *cloud_filteredXYZ);
         break;
     }
     case 1:
@@ -109,8 +167,10 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
         pcl::PassThrough<pcl::PCLPointCloud2> pass;
         pass.setInputCloud(cloud);
         pass.setFilterFieldName("z");
-        pass.setFilterLimits(-0.4, 1.3);
+        pass.setFilterLimits(passThroughMin, passThroughMax);
         pass.filter(*cloud_filtered);
+        // Convert to XYZ cloud
+        pcl::fromPCLPointCloud2(*cloud_filtered, *cloud_filteredXYZ);
         break;
     }
     case 2:
@@ -119,12 +179,36 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
         pcl::PassThrough<pcl::PCLPointCloud2> pass;
         pass.setInputCloud(cloud);
         pass.setFilterFieldName("z");
-        pass.setFilterLimits(-0.4, 1.3);
+        pass.setFilterLimits(passThroughMin, passThroughMax);
         pass.filter(*cloud_filtered);
-        pcl::VoxelGrid<pcl::PCLPointCloud2> sor;
-        sor.setInputCloud(cloud_filtered);
-        sor.setLeafSize(0.1, 0.1, 0.1);
-        sor.filter(*cloud_filtered);
+        pcl::VoxelGrid<pcl::PCLPointCloud2> vox;
+        vox.setInputCloud(cloud_filtered);
+        vox.setLeafSize(voxelGridSize, voxelGridSize, voxelGridSize);
+        vox.filter(*cloud_filtered);
+        // Convert to XYZ cloud
+        pcl::fromPCLPointCloud2(*cloud_filtered, *cloud_filteredXYZ);
+        break;
+    }
+    case 3:
+    {
+        // Pass Through and Voxel Grid filters
+        pcl::PassThrough<pcl::PCLPointCloud2> pass;
+        pass.setInputCloud(cloud);
+        pass.setFilterFieldName("z");
+        pass.setFilterLimits(passThroughMin, passThroughMax);
+        pass.filter(*cloud_filtered);
+        pcl::VoxelGrid<pcl::PCLPointCloud2> vox;
+        vox.setInputCloud(cloud_filtered);
+        vox.setLeafSize(voxelGridSize, voxelGridSize, voxelGridSize);
+        vox.filter(*cloud_filtered);
+        // Convert to XYZ cloud
+        pcl::fromPCLPointCloud2(*cloud_filtered, *cloud_filteredXYZ);
+        // Statistical Outlier Removal filter
+        pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+        sor.setInputCloud(cloud_filteredXYZ);
+        sor.setMeanK(statisticalMean);
+        sor.setStddevMulThresh(statisticalStdDev);
+        sor.filter(*cloud_filteredXYZ);
         break;
     }
     default:
@@ -133,17 +217,6 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
         return;
     }
     }
-
-    // Convert to XYZ cloud
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filteredXYZ(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::fromPCLPointCloud2(*cloud_filtered, *cloud_filteredXYZ);
-
-    // Statistical Outlier Removal filter
-    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-    sor.setInputCloud(cloud_filteredXYZ);
-    sor.setMeanK(50);
-    sor.setStddevMulThresh(1.0);
-    sor.filter(*cloud_filteredXYZ);
 
     // Convert to ROS data type
     sensor_msgs::PointCloud2 output;
@@ -176,10 +249,10 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
                                     0, 1, 0, 1,
                                     0, 0, 1, 0,
                                     0, 0, 0, 1);
+            float sigmaP = kfProcessNoise;     // process noise covariance
+            float sigmaQ = kfMeasurementNoise; // measurement noise covariance
             cv::setIdentity(KF->measurementMatrix);
-            float sigmaP = 0.0001; // process noise covariance
-            float sigmaQ = 0.01;   // measurement noise covariance
-            setIdentity(KF->processNoiseCov, cv::Scalar::all(sigmaP));
+            cv::setIdentity(KF->processNoiseCov, cv::Scalar::all(sigmaP));
             cv::setIdentity(KF->measurementNoiseCov, cv::Scalar(sigmaQ));
             cv::setIdentity(KF->errorCovPost, cv::Scalar::all(1));
 
@@ -189,6 +262,10 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
             KF->statePre.at<float>(1) = xClicked;
             KF->statePre.at<float>(2) = 0; // initial v_x
             KF->statePre.at<float>(3) = 0; // initial v_y
+            KF->statePost.at<float>(0) = yClicked;
+            KF->statePost.at<float>(1) = xClicked;
+            KF->statePost.at<float>(2) = 0; // initial v_x
+            KF->statePost.at<float>(3) = 0; // initial v_y
 
             // fisrt KF run
             cv::Mat prediction = KF->predict();
@@ -213,9 +290,9 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
              */
             std::vector<pcl::PointIndices> cluster_indices;
             pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
-            ec.setClusterTolerance(0.3);
-            ec.setMinClusterSize(20);
-            ec.setMaxClusterSize(200);
+            ec.setClusterTolerance(clusterTolerance);
+            ec.setMinClusterSize(minClusterSize);
+            ec.setMaxClusterSize(maxClusterSize);
             ec.setSearchMethod(tree);
             ec.setInputCloud(cloud_filteredXYZ);
             /* Extract the clusters out of pc and save indices in cluster_indices.*/
@@ -271,7 +348,7 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
             float kfEst_y = prediction.at<float>(0);
             // float kfEst_x = yClicked; // REMOVE: PROVIsoire
             // float kfEst_y = xClicked; // REMOVE: PROVIsoire
-            for (int i = 0; i < clusterCentroids.size(); i++)
+            for (unsigned i = 0; i < clusterCentroids.size(); i++)
             {
                 float cluster_x = clusterCentroids[i].x;
                 float cluster_y = clusterCentroids[i].y;

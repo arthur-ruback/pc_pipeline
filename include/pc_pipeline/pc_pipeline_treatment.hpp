@@ -43,12 +43,10 @@ private:
     ros::NodeHandle *m_nodeHandle;
     ros::Subscriber m_PCSubscriber;
     ros::Publisher m_PCMPublisher;
-    int pipelineMode;
     pcl::PCLPointCloud2::Ptr cloud;
     pcl::PCLPointCloud2::Ptr cloud_filtered;
     ros::Subscriber m_ClickedPointSubscriber;
     ros::Publisher m_ClusterPublisher;
-    bool segmentation;
 
     volatile float xClicked;
     volatile float yClicked;
@@ -57,4 +55,18 @@ private:
     bool firstKFRun;
     bool pointClicked;
     cv::KalmanFilter *KF;
+
+    // params from launch file
+    int pipelineMode;
+    bool segmentation;
+    float voxelGridSize;
+    float passThroughMin;
+    float passThroughMax;
+    float statisticalMean;
+    float statisticalStdDev;
+    float clusterTolerance;
+    int minClusterSize;
+    int maxClusterSize;
+    float kfProcessNoise;
+    float kfMeasurementNoise;
 };
