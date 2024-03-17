@@ -1,7 +1,9 @@
 # rob314
 
 ***!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!***
+
 ***Primitive version, still needs to manually select the cloud to follow***
+
 ***!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!***
 
 The hole project has this module but also a [insert link] controller and a [insert link] SLAM.
@@ -11,7 +13,7 @@ The hole project has this module but also a [insert link] controller and a [inse
 This repository shall be cloned into [your catktin workspace]/src.
 
 ```
-git clone https://github.com/arthur-ruback/rob314
+git clone https://github.com/arthur-ruback/pc_pipeline
 cd ..
 catkin_make 
 ```
