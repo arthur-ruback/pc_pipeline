@@ -120,6 +120,9 @@ myPipeline::myPipeline(ros::NodeHandle &nodeHandle) : m_nodeHandle(&nodeHandle)
     // create the cluster publisher
     m_ClusterPublisher = m_nodeHandle->advertise<sensor_msgs::PointCloud2>("/cluster", 1);
 
+    // create the cluster center publisher
+    M_ClusterCenterPublisher = m_nodeHandle->advertise<geometry_msgs::PointStamped>("/cluster_center", 1);
+
     // Create a PCLPointCloud2
     cloud = pcl::PCLPointCloud2::Ptr(new pcl::PCLPointCloud2);
     cloud_filtered = pcl::PCLPointCloud2::Ptr(new pcl::PCLPointCloud2);
@@ -389,6 +392,15 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
 
             // Publish the data
             m_ClusterPublisher.publish(output_cluster_msg);
+
+            // PUBLISH THE CLUSTER CENTROID
+            geometry_msgs::PointStamped clusterCenter;
+            clusterCenter.header.frame_id = msg->header.frame_id;
+            clusterCenter.header.stamp = ros::Time::now();
+            clusterCenter.point.x = clusterCentroids[rightCluserIndice].x;
+            clusterCenter.point.y = clusterCentroids[rightCluserIndice].y;
+            clusterCenter.point.z = 0;
+            M_ClusterCenterPublisher.publish(clusterCenter);
         }
     }
 }

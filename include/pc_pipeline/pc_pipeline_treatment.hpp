@@ -47,6 +47,7 @@ private:
     pcl::PCLPointCloud2::Ptr cloud_filtered;
     ros::Subscriber m_ClickedPointSubscriber;
     ros::Publisher m_ClusterPublisher;
+    ros::Publisher M_ClusterCenterPublisher;
 
     volatile float xClicked;
     volatile float yClicked;
