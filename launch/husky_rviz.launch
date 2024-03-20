@@ -25,11 +25,8 @@
    
    </node>
 
-   <node pkg="rviz"   type="rviz" name="rviz"                   args="-d $(find pc_pipeline)/rviz/lidar.rviz"             />
+   <node pkg="rviz"   type="rviz" name="rviz"                   args="-d $(find pc_pipeline)/rviz/lidar.rviz"              />
    
-   <!-- 
-      <node pkg="rosbag" type="play" name="player" output="screen" args="-l /home/arthur/dataset1/data1.bag -p -q -s 21"/> 
-   -->   
-
+   <node pkg="tf" type="static_transform_publisher" name="base_basefootprint" args="0 0 0.65 0 0 0 /base_link /rslidar 100"/> 
 </launch>
 
