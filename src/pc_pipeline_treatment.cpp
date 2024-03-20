@@ -145,10 +145,10 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
     // new conversion to use with XYZ cloud
     pcl::PCLPointCloud2 pcl_pc2;
     pcl_conversions::toPCL(*msg, pcl_pc2);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr in_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr in_cloud(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::fromPCLPointCloud2(pcl_pc2, *in_cloud);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr out_cloud(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filteredXYZ(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr out_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filteredXYZ(new pcl::PointCloud<pcl::PointXYZI>);
 
     // Perform the actual filtering based on pipeline mode
     switch (pipelineMode)
@@ -207,7 +207,7 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
         // Convert to XYZ cloud
         pcl::fromPCLPointCloud2(*cloud_filtered, *cloud_filteredXYZ);
         // Statistical Outlier Removal filter
-        pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+        pcl::StatisticalOutlierRemoval<pcl::PointXYZI> sor;
         sor.setInputCloud(cloud_filteredXYZ);
         sor.setMeanK(statisticalMean);
         sor.setStddevMulThresh(statisticalStdDev);
@@ -281,8 +281,8 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
         {
             // SEGMENT THE POINT CLOUD
             /* Creating the KdTree from input point cloud*/
-            pcl::search::KdTree<pcl::PointXYZ>::Ptr tree(
-                new pcl::search::KdTree<pcl::PointXYZ>);
+            pcl::search::KdTree<pcl::PointXYZI>::Ptr tree(
+                new pcl::search::KdTree<pcl::PointXYZI>);
             tree->setInputCloud(cloud_filteredXYZ);
 
             /* Here we are creating a vector of PointIndices, which contains the actual
@@ -292,7 +292,7 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
              * indices of the first cluster in input point cloud.
              */
             std::vector<pcl::PointIndices> cluster_indices;
-            pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
+            pcl::EuclideanClusterExtraction<pcl::PointXYZI> ec;
             ec.setClusterTolerance(clusterTolerance);
             ec.setMinClusterSize(minClusterSize);
             ec.setMaxClusterSize(maxClusterSize);
@@ -309,7 +309,7 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
             std::vector<pcl::PointIndices>::const_iterator it;
             std::vector<int>::const_iterator pit;
             // Vector of cluster pointclouds
-            std::vector<pcl::PointCloud<pcl::PointXYZ>::Ptr> cluster_vec;
+            std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> cluster_vec;
 
             // Cluster centroids
             std::vector<pcl::PointXY> clusterCentroids;
@@ -319,8 +319,8 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
                 float x = 0.0;
                 float y = 0.0;
                 int numPts = 0;
-                pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_cluster(
-                    new pcl::PointCloud<pcl::PointXYZ>);
+                pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_cluster(
+                    new pcl::PointCloud<pcl::PointXYZI>);
                 for (pit = it->indices.begin(); pit != it->indices.end(); pit++)
                 {
 
