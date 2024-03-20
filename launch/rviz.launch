@@ -1,5 +1,5 @@
 <launch>
 
-    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find pc_pipeline)/rviz/lidar.rviz" />
+    <node pkg="rviz" type="rviz" name="rviz_rviz" args="-d $(find pc_pipeline)/rviz/lidar.rviz" />
 
 </launch>
