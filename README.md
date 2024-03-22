@@ -6,7 +6,7 @@
 
 ***!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!***
 
-The hole project has this module but also a [insert link] controller and a [insert link] SLAM.
+The hole project has this module but also a [insert link] controller.
 
 ### Instalation using Catkin
 
@@ -51,7 +51,5 @@ roslaunch pc_pipeline pipeline.launch
 ### TODOs:
 - select automatically the person from the cloud in the first iteraction and get it as first measure;
 - verify the cases where the pointcloud is lost or too different (re-analize all the cloud);
-- fix the XY inversion in frame, specially with the robot moving frame
 - change the KF to take into account the movement of the robot
-- publish the pointCloud without the person
 
