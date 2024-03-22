@@ -31,6 +31,10 @@
 #include <pcl/segmentation/region_growing.h>
 #include <pcl/filters/statistical_outlier_removal.h>
 
+#include <mutex>
+
+#define DT 0.1
+
 class myPipeline
 {
 public:
@@ -40,6 +44,8 @@ public:
 private:
     void my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg);
     void my_callbackClickedPoint(const geometry_msgs::PointStamped::ConstPtr &msg);
+    void cb_kalman_update(const ros::TimerEvent &event);
+
     ros::NodeHandle *m_nodeHandle;
     ros::Subscriber m_PCSubscriber;
     ros::Publisher m_PCMPublisher;
@@ -56,6 +62,7 @@ private:
     bool firstKFRun;
     bool pointClicked;
     cv::KalmanFilter *KF;
+    std::mutex *mtx;
 
     // params from launch file
     int pipelineMode;
@@ -70,4 +77,6 @@ private:
     int maxClusterSize;
     float kfProcessNoise;
     float kfMeasurementNoise;
+
+    ros::Timer m_timer;
 };

@@ -133,6 +133,12 @@ myPipeline::myPipeline(ros::NodeHandle &nodeHandle) : m_nodeHandle(&nodeHandle)
 
     KF = NULL;
 
+    // create a timer to update the kalman filter
+    m_timer = m_nodeHandle->createTimer(ros::Duration(DT), &myPipeline::cb_kalman_update, this);
+
+    // initialize mutex
+    mtx = new std::mutex();
+
     ROS_INFO("Successfully launched node.");
 }
 
@@ -234,6 +240,7 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
     {
         if (firstKFRun)
         {
+            mtx->lock();
             if (KF != NULL)
             {
                 delete KF;
@@ -248,8 +255,8 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
 
             // Kalman states
             // [x, y, v_x, v_y]
-            KF->transitionMatrix = (cv::Mat_<float>(4, 4) << 1, 0, 1, 0,
-                                    0, 1, 0, 1,
+            KF->transitionMatrix = (cv::Mat_<float>(4, 4) << 1, 0, 1 * DT, 0,
+                                    0, 1, 0, 1 * DT,
                                     0, 0, 1, 0,
                                     0, 0, 0, 1);
             float sigmaP = kfProcessNoise;     // process noise covariance
@@ -270,12 +277,7 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
             KF->statePost.at<float>(2) = 0; // initial v_x
             KF->statePost.at<float>(3) = 0; // initial v_y
 
-            // fisrt KF run
-            cv::Mat prediction = KF->predict();
-            cv::Mat measurement = (cv::Mat_<float>(2, 1) << yClicked, xClicked);
-            KF->correct(measurement);
-            ROS_INFO("KF Estimation: (%f,%f)", prediction.at<float>(0), prediction.at<float>(1));
-            ROS_INFO("Measurement  : (%f,%f)", measurement.at<float>(1), measurement.at<float>(0));
+            mtx->unlock();
         }
         else
         {
@@ -345,10 +347,9 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
             // TODO: MAYBE CORRELATE THE NUMBER OF POITNS TO FILTER THE CLOUDS
             float minDist = FLT_MAX;
             int rightCluserIndice = -1;
-            cv::Mat prediction = KF->predict();
             // FIXME: LOOK INTO FRAME TRANSFORMATIONS, SPECIALLY WHEN THE ROBOT WILL MOVE
-            float kfEst_x = prediction.at<float>(1);
-            float kfEst_y = prediction.at<float>(0);
+            float kfEst_x = KF->statePost.at<float>(1);
+            float kfEst_y = KF->statePost.at<float>(0);
             // float kfEst_x = yClicked; // REMOVE: PROVIsoire
             // float kfEst_y = xClicked; // REMOVE: PROVIsoire
             for (unsigned i = 0; i < clusterCentroids.size(); i++)
@@ -376,7 +377,9 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
             cv::Mat measurement = (cv::Mat_<float>(2, 1) << clusterCentroids[rightCluserIndice].y, clusterCentroids[rightCluserIndice].x);
 
             // UPDATE THE KF WITH NEW DATA
+            mtx->lock();
             KF->correct(measurement);
+            mtx->unlock();
             ROS_INFO("KF Estimation: (%f,%f)", kfEst_x, kfEst_y);
             ROS_INFO("Measurement  : (%f,%f)", measurement.at<float>(1), measurement.at<float>(0));
 
@@ -419,4 +422,55 @@ void myPipeline::my_callbackClickedPoint(const geometry_msgs::PointStamped::Cons
 
     firstKFRun = true;
     pointClicked = true;
+
+    mtx->lock();
+    if (KF != NULL)
+    {
+        delete KF;
+    }
+
+    // create Kalman filter cv2
+    KF = new cv::KalmanFilter(4, 2);
+
+    // initialize kalman filter
+    ROS_INFO("(Re)Initializing Kalman Filter");
+    firstKFRun = false;
+
+    // Kalman states
+    // [x, y, v_x, v_y]
+    KF->transitionMatrix = (cv::Mat_<float>(4, 4) << 1, 0, 1 * DT, 0,
+                            0, 1, 0, 1 * DT,
+                            0, 0, 1, 0,
+                            0, 0, 0, 1);
+    float sigmaP = kfProcessNoise;     // process noise covariance
+    float sigmaQ = kfMeasurementNoise; // measurement noise covariance
+    cv::setIdentity(KF->measurementMatrix);
+    cv::setIdentity(KF->processNoiseCov, cv::Scalar::all(sigmaP));
+    cv::setIdentity(KF->measurementNoiseCov, cv::Scalar(sigmaQ));
+    cv::setIdentity(KF->errorCovPost, cv::Scalar::all(1));
+
+    // Set initial state
+    // FIXME: LOOK INTO FRAME TRANSFORMATIONS, SPECIALLY WHEN THE ROBOT WILL MOVE
+    KF->statePre.at<float>(0) = yClicked;
+    KF->statePre.at<float>(1) = xClicked;
+    KF->statePre.at<float>(2) = 0; // initial v_x
+    KF->statePre.at<float>(3) = 0; // initial v_y
+    KF->statePost.at<float>(0) = yClicked;
+    KF->statePost.at<float>(1) = xClicked;
+    KF->statePost.at<float>(2) = 0; // initial v_x
+    KF->statePost.at<float>(3) = 0; // initial v_y
+
+    mtx->unlock();
+}
+
+// callback function to update the kalman filter
+void myPipeline::cb_kalman_update(const ros::TimerEvent &)
+{
+    mtx->lock();
+    if (KF != NULL)
+    {
+        cv::Mat prediction = KF->predict();
+        ROS_INFO("KF Estimation: (%f,%f)", prediction.at<float>(1), prediction.at<float>(0));
+    }
+    mtx->unlock();
 }
