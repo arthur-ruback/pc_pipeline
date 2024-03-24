@@ -2,6 +2,7 @@
 
 myPipeline::myPipeline(ros::NodeHandle &nodeHandle) : m_nodeHandle(&nodeHandle)
 {
+    // subscriber for the point cloud
     std::string scanTopicName;
     int scanTopicQueueSize;
     if (!m_nodeHandle->getParam("scan_name", scanTopicName))
@@ -14,8 +15,9 @@ myPipeline::myPipeline(ros::NodeHandle &nodeHandle) : m_nodeHandle(&nodeHandle)
         ROS_ERROR("Error getting paramenter scan/queue_size\n");
         return;
     }
-    m_PCSubscriber = m_nodeHandle->subscribe(scanTopicName, scanTopicQueueSize, &myPipeline::my_callbackPC, this);
+    m_PCSubscriber = m_nodeHandle->subscribe(scanTopicName, scanTopicQueueSize, &myPipeline::cb_cloudFilter, this);
 
+    // publisher for the filtered point cloud
     std::string scanModifiedTopicName;
     int scanModifiedTopicQueueSize;
     if (!m_nodeHandle->getParam("scan_modified_name", scanModifiedTopicName))
@@ -28,7 +30,67 @@ myPipeline::myPipeline(ros::NodeHandle &nodeHandle) : m_nodeHandle(&nodeHandle)
         ROS_ERROR("Error getting paramenter scan_modified/queue_size\n");
         return;
     }
-    m_PCMPublisher = m_nodeHandle->advertise<sensor_msgs::PointCloud2>(scanModifiedTopicName, scanModifiedTopicQueueSize);
+    m_PCFilteredPublisher = m_nodeHandle->advertise<sensor_msgs::PointCloud2>(scanModifiedTopicName, scanModifiedTopicQueueSize);
+
+    // publisher for the candidates point cloud
+    std::string scanCandidatesTopicName;
+    int scanCandidatesTopicQueueSize;
+    if (!m_nodeHandle->getParam("scan_candidates_name", scanCandidatesTopicName))
+    {
+        ROS_ERROR("Error getting paramenter scan_candidates/name\n");
+        return;
+    }
+    if (!m_nodeHandle->getParam("scan_candidates_queue_size", scanCandidatesTopicQueueSize))
+    {
+        ROS_ERROR("Error getting paramenter scan_candidates/queue_size\n");
+        return;
+    }
+    m_PCCandiadtesPublisher = m_nodeHandle->advertise<sensor_msgs::PointCloud2>(scanCandidatesTopicName, scanCandidatesTopicQueueSize);
+
+    // subscriber for the pose measurement
+    std::string poseMeasurementTopicName;
+    int poseMeasurementTopicQueueSize;
+    if (!m_nodeHandle->getParam("pose_measurement_name", poseMeasurementTopicName))
+    {
+        ROS_ERROR("Error getting paramenter pose_measurement/name\n");
+        return;
+    }
+    if (!m_nodeHandle->getParam("pose_measurement_queue_size", poseMeasurementTopicQueueSize))
+    {
+        ROS_ERROR("Error getting paramenter pose_measurement/queue_size\n");
+        return;
+    }
+    m_poseMeasurementSubscriber = m_nodeHandle->subscribe(poseMeasurementTopicName, poseMeasurementTopicQueueSize, &myPipeline::cb_poseMeasurement, this);
+
+    // subscribe to clicked point
+    std::string clickedPointTopicName;
+    int clickedPointTopicQueueSize;
+    if (!m_nodeHandle->getParam("clicked_point_name", clickedPointTopicName))
+    {
+        ROS_ERROR("Error getting paramenter clicked_point/name\n");
+        return;
+    }
+    if (!m_nodeHandle->getParam("clicked_point_queue_size", clickedPointTopicQueueSize))
+    {
+        ROS_ERROR("Error getting paramenter clicked_point/queue_size\n");
+        return;
+    }
+    m_ClickedPointSubscriber = m_nodeHandle->subscribe(clickedPointTopicName, clickedPointTopicQueueSize, &myPipeline::cb_clickedPoint, this);
+
+    // create the cluster center publisher
+    int clusterCenterQueueSize;
+    std::string clusterCenterTopicName;
+    if (!m_nodeHandle->getParam("cluster_center_name", clusterCenterTopicName))
+    {
+        ROS_ERROR("Error getting paramenter cluster_center/name\n");
+        return;
+    }
+    if (!m_nodeHandle->getParam("cluster_center_queue_size", clusterCenterQueueSize))
+    {
+        ROS_ERROR("Error getting paramenter cluster_center/queue_size\n");
+        return;
+    }
+    m_ClusterCenterPublisher = m_nodeHandle->advertise<geometry_msgs::PointStamped>(clusterCenterTopicName, clusterCenterQueueSize);
 
     // get pipeline mode param
     if (!m_nodeHandle->getParam("pipeline_mode", pipelineMode))
@@ -114,22 +176,21 @@ myPipeline::myPipeline(ros::NodeHandle &nodeHandle) : m_nodeHandle(&nodeHandle)
         return;
     }
 
-    // subscribe to /clicked_point [geometry_msgs/PointStamped]
-    m_ClickedPointSubscriber = m_nodeHandle->subscribe("/clicked_point", 2, &myPipeline::my_callbackClickedPoint, this);
+    // get measurementFailThreshold param
+    if (!m_nodeHandle->getParam("measurement_fail_threshold", measurementFailThreshold))
+    {
+        ROS_ERROR("Error getting paramenter measurement_fail_threshold\n");
+        return;
+    }
 
-    // create the cluster publisher
-    m_ClusterPublisher = m_nodeHandle->advertise<sensor_msgs::PointCloud2>("/cluster", 1);
+    // initialize the counters
+    printCounter = 0;
+    measurementFailCounter = 0;
 
-    // create the cluster center publisher
-    M_ClusterCenterPublisher = m_nodeHandle->advertise<geometry_msgs::PointStamped>("/cluster_center", 1);
-
-    // Create a PCLPointCloud2
+    // Create the point cloud data storage
     cloud = pcl::PCLPointCloud2::Ptr(new pcl::PCLPointCloud2);
     cloud_filtered = pcl::PCLPointCloud2::Ptr(new pcl::PCLPointCloud2);
-
-    xClicked = yClicked = zClicked = 0;
-    firstKFRun = true;
-    pointClicked = false;
+    cloud_filtered_xyz = pcl::PointCloud<pcl::PointXYZ>::Ptr(new pcl::PointCloud<pcl::PointXYZ>);
 
     KF = NULL;
 
@@ -142,18 +203,17 @@ myPipeline::myPipeline(ros::NodeHandle &nodeHandle) : m_nodeHandle(&nodeHandle)
     ROS_INFO("Successfully launched node.");
 }
 
-// main pipeline callback function
-void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
+// filter callback function
+void myPipeline::cb_cloudFilter(const sensor_msgs::PointCloud2::ConstPtr &msg)
 {
+    KFframeID = msg->header.frame_id;
     // Convert to PCL data type
     pcl_conversions::toPCL(*msg, *cloud);
 
     // new conversion to use with XYZ cloud
     pcl::PCLPointCloud2 pcl_pc2;
     pcl_conversions::toPCL(*msg, pcl_pc2);
-    pcl::PointCloud<pcl::PointXYZI>::Ptr in_cloud(new pcl::PointCloud<pcl::PointXYZI>);
-    pcl::fromPCLPointCloud2(pcl_pc2, *in_cloud);
-    pcl::PointCloud<pcl::PointXYZI>::Ptr out_cloud(new pcl::PointCloud<pcl::PointXYZI>);
+    pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_tmp(new pcl::PointCloud<pcl::PointXYZI>);
     pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_filteredXYZ(new pcl::PointCloud<pcl::PointXYZI>);
 
     // Perform the actual filtering based on pipeline mode
@@ -200,7 +260,7 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
     }
     case 3:
     {
-        // Pass Through and Voxel Grid filters
+        // Pass Through and Voxel Grid and statistical outliner filters
         pcl::PassThrough<pcl::PCLPointCloud2> pass;
         pass.setInputCloud(cloud);
         pass.setFilterFieldName("z");
@@ -233,195 +293,102 @@ void myPipeline::my_callbackPC(const sensor_msgs::PointCloud2::ConstPtr &msg)
     pcl::toROSMsg(*cloud_filteredXYZ.get(), output);
 
     // Publish the data
-    m_PCMPublisher.publish(output);
+    m_PCFilteredPublisher.publish(output);
 
     // check if clicked point is valid to either initialize the kalman filter or update it
-    if (segmentation && pointClicked)
+    if (segmentation)
     {
-        if (firstKFRun)
+        // SEGMENT THE POINT CLOUD
+        /* Creating the KdTree from input point cloud*/
+        pcl::search::KdTree<pcl::PointXYZI>::Ptr tree(
+            new pcl::search::KdTree<pcl::PointXYZI>);
+        tree->setInputCloud(cloud_filteredXYZ);
+
+        /* Here we are creating a vector of PointIndices, which contains the actual
+         * index information in a vector<int>. The indices of each detected cluster
+         * are saved here. Cluster_indices is a vector containing one instance of
+         * PointIndices for each detected cluster. Cluster_indices[0] contain all
+         * indices of the first cluster in input point cloud.
+         */
+        std::vector<pcl::PointIndices> cluster_indices;
+        pcl::EuclideanClusterExtraction<pcl::PointXYZI> ec;
+        ec.setClusterTolerance(clusterTolerance);
+        ec.setMinClusterSize(minClusterSize);
+        ec.setMaxClusterSize(maxClusterSize);
+        ec.setSearchMethod(tree);
+        ec.setInputCloud(cloud_filteredXYZ);
+        /* Extract the clusters out of pc and save indices in cluster_indices.*/
+        ec.extract(cluster_indices);
+
+        /* To separate each cluster out of the vector<PointIndices> we have to
+         * iterate through cluster_indices, create a new PointCloud for each
+         * entry and write all points of the current cluster in the PointCloud.
+         */
+
+        std::vector<pcl::PointIndices>::const_iterator it;
+        std::vector<int>::const_iterator pit;
+        // Vector of cluster pointclouds
+        std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> cluster_vec;
+
+        // Cluster centroids
+        std::vector<pcl::PointXY> clusterCentroids;
+
+        for (it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
         {
-            mtx->lock();
-            if (KF != NULL)
+            float x = 0.0;
+            float y = 0.0;
+            int numPts = 0;
+            pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_cluster(
+                new pcl::PointCloud<pcl::PointXYZI>);
+            for (pit = it->indices.begin(); pit != it->indices.end(); pit++)
             {
-                delete KF;
+
+                cloud_cluster->points.push_back(cloud_filteredXYZ->points[*pit]);
+
+                x += cloud_filteredXYZ->points[*pit].x;
+                y += cloud_filteredXYZ->points[*pit].y;
+                numPts++;
             }
 
-            // create Kalman filter cv2
-            KF = new cv::KalmanFilter(4, 2);
+            pcl::PointXY centroid;
+            centroid.x = x / numPts;
+            centroid.y = y / numPts;
 
-            // initialize kalman filter
-            ROS_INFO("(Re)Initializing Kalman Filter");
-            firstKFRun = false;
+            cluster_vec.push_back(cloud_cluster);
 
-            // Kalman states
-            // [x, y, v_x, v_y]
-            KF->transitionMatrix = (cv::Mat_<float>(4, 4) << 1, 0, 1 * DT, 0,
-                                    0, 1, 0, 1 * DT,
-                                    0, 0, 1, 0,
-                                    0, 0, 0, 1);
-            float sigmaP = kfProcessNoise;     // process noise covariance
-            float sigmaQ = kfMeasurementNoise; // measurement noise covariance
-            cv::setIdentity(KF->measurementMatrix);
-            cv::setIdentity(KF->processNoiseCov, cv::Scalar::all(sigmaP));
-            cv::setIdentity(KF->measurementNoiseCov, cv::Scalar(sigmaQ));
-            cv::setIdentity(KF->errorCovPost, cv::Scalar::all(1));
-
-            // Set initial state
-            // FIXME: LOOK INTO FRAME TRANSFORMATIONS, SPECIALLY WHEN THE ROBOT WILL MOVE
-            KF->statePre.at<float>(0) = yClicked;
-            KF->statePre.at<float>(1) = xClicked;
-            KF->statePre.at<float>(2) = 0; // initial v_x
-            KF->statePre.at<float>(3) = 0; // initial v_y
-            KF->statePost.at<float>(0) = yClicked;
-            KF->statePost.at<float>(1) = xClicked;
-            KF->statePost.at<float>(2) = 0; // initial v_x
-            KF->statePost.at<float>(3) = 0; // initial v_y
-
-            mtx->unlock();
+            // Get the centroid of the cluster
+            clusterCentroids.push_back(centroid);
         }
-        else
+
+        // combine all the candidates into a single point cloud
+        pcl::PointCloud<pcl::PointXYZI>::Ptr candidates(new pcl::PointCloud<pcl::PointXYZI>);
+        for (unsigned i = 0; i < cluster_vec.size(); i++)
         {
-            // SEGMENT THE POINT CLOUD
-            /* Creating the KdTree from input point cloud*/
-            pcl::search::KdTree<pcl::PointXYZI>::Ptr tree(
-                new pcl::search::KdTree<pcl::PointXYZI>);
-            tree->setInputCloud(cloud_filteredXYZ);
-
-            /* Here we are creating a vector of PointIndices, which contains the actual
-             * index information in a vector<int>. The indices of each detected cluster
-             * are saved here. Cluster_indices is a vector containing one instance of
-             * PointIndices for each detected cluster. Cluster_indices[0] contain all
-             * indices of the first cluster in input point cloud.
-             */
-            std::vector<pcl::PointIndices> cluster_indices;
-            pcl::EuclideanClusterExtraction<pcl::PointXYZI> ec;
-            ec.setClusterTolerance(clusterTolerance);
-            ec.setMinClusterSize(minClusterSize);
-            ec.setMaxClusterSize(maxClusterSize);
-            ec.setSearchMethod(tree);
-            ec.setInputCloud(cloud_filteredXYZ);
-            /* Extract the clusters out of pc and save indices in cluster_indices.*/
-            ec.extract(cluster_indices);
-
-            /* To separate each cluster out of the vector<PointIndices> we have to
-             * iterate through cluster_indices, create a new PointCloud for each
-             * entry and write all points of the current cluster in the PointCloud.
-             */
-
-            std::vector<pcl::PointIndices>::const_iterator it;
-            std::vector<int>::const_iterator pit;
-            // Vector of cluster pointclouds
-            std::vector<pcl::PointCloud<pcl::PointXYZI>::Ptr> cluster_vec;
-
-            // Cluster centroids
-            std::vector<pcl::PointXY> clusterCentroids;
-
-            for (it = cluster_indices.begin(); it != cluster_indices.end(); ++it)
+            for (unsigned j = 0; j < cluster_vec[i]->points.size(); j++)
             {
-                float x = 0.0;
-                float y = 0.0;
-                int numPts = 0;
-                pcl::PointCloud<pcl::PointXYZI>::Ptr cloud_cluster(
-                    new pcl::PointCloud<pcl::PointXYZI>);
-                for (pit = it->indices.begin(); pit != it->indices.end(); pit++)
-                {
-
-                    cloud_cluster->points.push_back(cloud_filteredXYZ->points[*pit]);
-
-                    x += cloud_filteredXYZ->points[*pit].x;
-                    y += cloud_filteredXYZ->points[*pit].y;
-                    numPts++;
-                }
-
-                pcl::PointXY centroid;
-                centroid.x = x / numPts;
-                centroid.y = y / numPts;
-
-                cluster_vec.push_back(cloud_cluster);
-
-                // Get the centroid of the cluster
-                clusterCentroids.push_back(centroid);
+                candidates->points.push_back(cluster_vec[i]->points[j]);
             }
-
-            // FIND THE CLOSEST CLUSTER TO THE KF ESTIMATION (OR LAST ESTIMATION)
-            // TODO: MAYBE CORRELATE THE NUMBER OF POITNS TO FILTER THE CLOUDS
-            float minDist = FLT_MAX;
-            int rightCluserIndice = -1;
-            // FIXME: LOOK INTO FRAME TRANSFORMATIONS, SPECIALLY WHEN THE ROBOT WILL MOVE
-            float kfEst_x = KF->statePost.at<float>(1);
-            float kfEst_y = KF->statePost.at<float>(0);
-            // float kfEst_x = yClicked; // REMOVE: PROVIsoire
-            // float kfEst_y = xClicked; // REMOVE: PROVIsoire
-            for (unsigned i = 0; i < clusterCentroids.size(); i++)
-            {
-                float cluster_x = clusterCentroids[i].x;
-                float cluster_y = clusterCentroids[i].y;
-                float dist = sqrt(pow(cluster_x - kfEst_x, 2) + pow(cluster_y - kfEst_y, 2));
-                if (dist < minDist)
-                {
-                    minDist = dist;
-                    rightCluserIndice = i;
-                }
-            }
-
-            if (rightCluserIndice == -1)
-            {
-                ROS_ERROR("No cluster found");
-                return;
-            }
-
-            ROS_INFO("Cluster with %ld points", cluster_vec[rightCluserIndice]->points.size());
-
-            // GET NEW CENTROIDE FROM THE CLUSTER
-            // FIXME: LOOK INTO FRAME TRANSFORMATIONS, SPECIALLY WHEN THE ROBOT WILL MOVE
-            cv::Mat measurement = (cv::Mat_<float>(2, 1) << clusterCentroids[rightCluserIndice].y, clusterCentroids[rightCluserIndice].x);
-
-            // UPDATE THE KF WITH NEW DATA
-            mtx->lock();
-            KF->correct(measurement);
-            mtx->unlock();
-            ROS_INFO("KF Estimation: (%f,%f)", kfEst_x, kfEst_y);
-            ROS_INFO("Measurement  : (%f,%f)", measurement.at<float>(1), measurement.at<float>(0));
-
-            // PUBLISH POINTS FROM OBJECT CLUSTER
-            pcl::PCLPointCloud2::Ptr cloud_cluster(new pcl::PCLPointCloud2);
-            pcl::toPCLPointCloud2(*cluster_vec[rightCluserIndice], *cloud_cluster);
-
-            // Convert to ROS data type
-            sensor_msgs::PointCloud2 output_cluster_msg;
-            pcl_conversions::moveFromPCL(*cloud_cluster, output_cluster_msg);
-            output_cluster_msg.header.frame_id = msg->header.frame_id;
-            output_cluster_msg.header.stamp = ros::Time::now();
-
-            // Publish the data
-            m_ClusterPublisher.publish(output_cluster_msg);
-
-            // PUBLISH THE CLUSTER CENTROID
-            geometry_msgs::PointStamped clusterCenter;
-            clusterCenter.header.frame_id = msg->header.frame_id;
-            clusterCenter.header.stamp = ros::Time::now();
-            clusterCenter.point.x = clusterCentroids[rightCluserIndice].x;
-            clusterCenter.point.y = clusterCentroids[rightCluserIndice].y;
-            clusterCenter.point.z = 0;
-            M_ClusterCenterPublisher.publish(clusterCenter);
         }
+
+        // Convert to ROS data type
+        sensor_msgs::PointCloud2 output_candidates;
+        pcl::toROSMsg(*candidates.get(), output_candidates);
+
+        // Set the frame ID
+        output_candidates.header.frame_id = msg->header.frame_id;
+        output_candidates.header.stamp = ros::Time::now();
+
+        // Publish the data
+        m_PCCandiadtesPublisher.publish(output_candidates);
     }
 }
 
 // callback funtion to clicked point
-void myPipeline::my_callbackClickedPoint(const geometry_msgs::PointStamped::ConstPtr &msg)
+void myPipeline::cb_clickedPoint(const geometry_msgs::PointStamped::ConstPtr &msg)
 {
     ROS_INFO("Clicked point received");
     // print clicked point data
     ROS_INFO("x: %f, y: %f, z: %f", msg->point.x, msg->point.y, msg->point.z);
-
-    // store clicked point data
-    xClicked = msg->point.x;
-    yClicked = msg->point.y;
-    zClicked = msg->point.z;
-
-    firstKFRun = true;
-    pointClicked = true;
 
     mtx->lock();
     if (KF != NULL)
@@ -434,12 +401,11 @@ void myPipeline::my_callbackClickedPoint(const geometry_msgs::PointStamped::Cons
 
     // initialize kalman filter
     ROS_INFO("(Re)Initializing Kalman Filter");
-    firstKFRun = false;
 
     // Kalman states
     // [x, y, v_x, v_y]
-    KF->transitionMatrix = (cv::Mat_<float>(4, 4) << 1, 0, 1 * DT, 0,
-                            0, 1, 0, 1 * DT,
+    KF->transitionMatrix = (cv::Mat_<float>(4, 4) << 1, 0, DT, 0,
+                            0, 1, 0, DT,
                             0, 0, 1, 0,
                             0, 0, 0, 1);
     float sigmaP = kfProcessNoise;     // process noise covariance
@@ -451,12 +417,12 @@ void myPipeline::my_callbackClickedPoint(const geometry_msgs::PointStamped::Cons
 
     // Set initial state
     // FIXME: LOOK INTO FRAME TRANSFORMATIONS, SPECIALLY WHEN THE ROBOT WILL MOVE
-    KF->statePre.at<float>(0) = yClicked;
-    KF->statePre.at<float>(1) = xClicked;
+    KF->statePre.at<float>(0) = msg->point.x;
+    KF->statePre.at<float>(1) = msg->point.y;
     KF->statePre.at<float>(2) = 0; // initial v_x
     KF->statePre.at<float>(3) = 0; // initial v_y
-    KF->statePost.at<float>(0) = yClicked;
-    KF->statePost.at<float>(1) = xClicked;
+    KF->statePost.at<float>(0) = msg->point.x;
+    KF->statePost.at<float>(1) = msg->point.y;
     KF->statePost.at<float>(2) = 0; // initial v_x
     KF->statePost.at<float>(3) = 0; // initial v_y
 
@@ -469,8 +435,90 @@ void myPipeline::cb_kalman_update(const ros::TimerEvent &)
     mtx->lock();
     if (KF != NULL)
     {
+        printCounter++;
         cv::Mat prediction = KF->predict();
-        ROS_INFO("KF Estimation: (%f,%f)", prediction.at<float>(1), prediction.at<float>(0));
+        // PUBLISH THE CLUSTER CENTROID
+        geometry_msgs::PointStamped clusterCenter;
+        clusterCenter.header.frame_id = KFframeID;
+        clusterCenter.header.stamp = ros::Time::now();
+        clusterCenter.point.x = KF->statePost.at<float>(0);
+        clusterCenter.point.y = KF->statePost.at<float>(1);
+        clusterCenter.point.z = 0;
+        m_ClusterCenterPublisher.publish(clusterCenter);
+        if (printCounter >= 10)
+        {
+            printCounter = 0;
+            /*ROS_INFO("KF Estimation: (%f,%f), KF Covariance: (%f,%f)",
+                     KF->statePost.at<float>(1),
+                     KF->statePost.at<float>(0),
+                     KF->errorCovPost.at<float>(0, 0),
+                     KF->errorCovPost.at<float>(1, 1));
+            */
+        }
     }
     mtx->unlock();
+}
+
+// callback function to get a measument to the kalman filter
+void myPipeline::cb_poseMeasurement(const geometry_msgs::PoseArray::ConstPtr &msg)
+{
+    // ROS_INFO("Measurement received");
+
+    if (measurementFailCounter >= measurementFailThreshold)
+    {
+        ROS_ERROR("Too many failed measurements, resetting KF");
+        measurementFailCounter = 0;
+        mtx->lock();
+        if (KF != NULL)
+        {
+            delete KF;
+            KF = NULL;
+        }
+        mtx->unlock();
+        return;
+    }
+
+    // check if the kalman filter is initialized
+    if (KF != NULL)
+    {
+        // Go through all the poses and get the closest one within a certain threshold
+        float minDist = FLT_MAX;
+        int rightCluserIndice = -1;
+        // FIXME: LOOK INTO FRAME TRANSFORMATIONS, SPECIALLY WHEN THE ROBOT WILL MOVE
+        float kfEst_x = KF->statePost.at<float>(0);
+        float kfEst_y = KF->statePost.at<float>(1);
+        float requiredDist = 2 * sqrt(KF->errorCovPost.at<float>(0, 0) + KF->errorCovPost.at<float>(1, 1));
+        for (unsigned i = 0; i < msg->poses.size(); i++)
+        {
+            float cluster_x = msg->poses[i].position.x;
+            float cluster_y = msg->poses[i].position.y;
+            float dist = sqrt(pow(cluster_x - kfEst_x, 2) + pow(cluster_y - kfEst_y, 2));
+            if (dist < minDist && dist < requiredDist)
+            {
+                minDist = dist;
+                rightCluserIndice = i;
+            }
+        }
+
+        // if minDist is too large, then no cluster was found
+        if (rightCluserIndice == -1)
+        {
+            ROS_WARN("Discarding measurement, no CLOSE cluster found");
+            measurementFailCounter++;
+            return;
+        }
+
+        measurementFailCounter = 0;
+
+        // UPDATE THE KF WITH NEW DATA
+        cv::Mat measurement = (cv::Mat_<float>(2, 1) << msg->poses[rightCluserIndice].position.x, msg->poses[rightCluserIndice].position.y);
+
+        mtx->lock();
+        KF->correct(measurement);
+        mtx->unlock();
+        // ROS_INFO("KF Estimation: (%f,%f)", kfEst_x, kfEst_y);
+        // ROS_INFO("Measurement  : (%f,%f)", measurement.at<float>(0), measurement.at<float>(1));
+    }
+
+    return;
 }
