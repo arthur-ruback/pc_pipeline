@@ -3,36 +3,7 @@
 <launch>
     
    <node name="pc_pipeline" pkg="pc_pipeline" type="pc_pipeline_node" output="screen" >
-   
-    <param name="scan_name"                   type="string" value="/rslidar_points" />
-    <param name="scan_queue_size"             type="int"    value="2"               />
-    <param name="scan_modified_name"          type="string" value="/filtered_cloud" />
-    <param name="scan_modified_queue_size"    type="int"    value="2"               />
-    <param name="scan_candidates_name"        type="string" value="/velodyne_points"/>
-    <param name="scan_candidates_queue_size"  type="int"    value="2"               />
-    <param name="pose_measurement_name"       type="string" value="/object3d_detector/poses" />
-    <param name="pose_measurement_queue_size" type="int"    value="2"               />
-    <param name="clicked_point_name"          type="string" value="/clicked_point"  />
-    <param name="clicked_point_queue_size"    type="int"    value="2"               />
-    <param name="cluster_center_name"         type="string" value="/cluster_center" />
-    <param name="cluster_center_queue_size"   type="int"    value="2"               />
-
-    <param name="pipeline_mode"       type="int"    value="3"      />
-    <param name="segmentation"        type="bool"   value="true"   />
-    
-    <param name="voxel_grid_size"     type="double" value="0.1"    />
-    <param name="pass_through_min"    type="double" value="-0.4"   />
-    <param name="pass_through_max"    type="double" value="1.3"    />
-    <param name="statistical_mean"    type="double" value="50.0"   />
-    <param name="statistical_std_dev" type="double" value="0.1"    />
-    <param name="cluster_tolerance"   type="double" value="0.3"    />
-    <param name="min_cluster_size"    type="int"    value="30"     />
-    <param name="max_cluster_size"    type="int"    value="120"    />
-    <param name="kf_process_noise"    type="double" value="0.01"   />
-    <param name="kf_measure_noise"    type="double" value="0.01"   />
-    
-    <param name="measurement_fail_threshold" type="int" value="20" />
-   
+      <rosparam command="load" file="$(find pc_pipeline)/config/pipeline_params.yaml"/>
    </node>
 
    <node pkg="rviz"   type="rviz" name="rviz_sim"                   args="-d $(find pc_pipeline)/rviz/lidar.rviz"             />
@@ -42,7 +13,6 @@
    <node pkg="tf" type="static_transform_publisher" name="velodyne_rslidar"  args="0 0 0 0 0 0 velodyne rslidar 100"/> 
    <node pkg="tf" type="static_transform_publisher" name="rslidar_velodyne"  args="0 0 0 0 0 0 rslidar velodyne 100"/> 
    <node pkg="tf" type="static_transform_publisher" name="base_link_rslidar" args="0 0 0.65 0 0 0 base_link rslidar 100"/> 
-   <node pkg="tf" type="static_transform_publisher" name="odom_base_link"    args="0 0 0 0 0 0 odom base_link 100"/> 
    
    <!-- FLOBOT 3D Object Detector -->
   <node pkg="object3d_detector" type="object3d_detector" name="object3d_detector" output="screen" respawn="false">
