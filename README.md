@@ -1,6 +1,6 @@
-# rob314
+# ROB314
 
-The hole project has this module but also a [controller](https://github.com/arthur-ruback/husky_controller).
+The project has this module but also a [controller](https://github.com/arthur-ruback/husky_controller).
 
 ### Instalation using Catkin
 
@@ -45,13 +45,11 @@ The launchfiles defined in *launch/blablabla.launch* imports the definition of s
 
 The following execution is used by the authors to run simultaniously on the husky A200 robot and on the user computer. It requires a working ROS multi-machine setup.
 
-[ON HUSKY]
 ```
-roslaunch pc_pipeline husky_no_rviz.launch
+[ON HUSKY] roslaunch pc_pipeline husky_no_rviz.launch
 ```
 
-[ON PC]
 ```
-roslaunch pc_pipeline rviz.launch
+[ON PC] roslaunch pc_pipeline rviz.launch
 ```
 
