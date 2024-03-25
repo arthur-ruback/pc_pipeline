@@ -11,7 +11,7 @@ clicked_point_queue_size:    2
 cluster_center_name:         "/cluster_center" 
 cluster_center_queue_size:   2               
 pipeline_mode:       3    
-segmentation:       "true" 
+segmentation:        true
 voxel_grid_size:     0.1  
 pass_through_min:   -0.4 
 pass_through_max:    1.3  
