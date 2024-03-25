@@ -53,3 +53,5 @@ The following execution is used by the authors to run simultaniously on the husk
 [ON PC] roslaunch pc_pipeline rviz.launch
 ```
 
+You should click on the person cluster to follow to begin or to change it during execution.
+
